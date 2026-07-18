@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0
+
+- Added filename-based NCS, NCTS, and NOAPS classification.
+- Added strict separation of analytics by series.
+- Added recurring offender analysis for vectors, cars, camera serials, pairwise combinations, and three-way vector/car/camera combinations.
+- Added event-adjusted comparisons, recurring failure-race counts, evidence scores, and calculation display.
+- Added Evidence Explorer race history for every offender and combination.
+- Added automatic schema migration 003 with analysis indexes and release tracking.
+- Added rollback-safe `bsi-update` with backups, health checks, login-launcher repair, and automatic rollback.
+
 ## 2.2.1
 
 - Fixed update failures when Docker-created data directories are owned by root.

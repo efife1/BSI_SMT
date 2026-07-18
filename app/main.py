@@ -8,8 +8,9 @@ from app.services.pdf_parser import parse_pdf
 from app.services.excel_parser import parse_excel
 from app.services.analytics import overview,correlations,trend,rank,adjusted,rootcause,save_analysis_snapshot
 from database.migrate import migrate
+from app.services.series_analytics import SERIES,detect_series,series_overview,recurring_offenders,offender_detail,observation_series_evidence
 
-APP=FastAPI(title="BSI SMT",version="2.2.2")
+APP=FastAPI(title="BSI SMT",version="3.0.0")
 APPDIR=Path(__file__).parent;DATA=Path("data");DB=DATA/"bsi_smt_v2.db";UP=DATA/"uploads";AR=DATA/"archive"
 UP.mkdir(parents=True,exist_ok=True);AR.mkdir(parents=True,exist_ok=True)
 APP.mount("/static",StaticFiles(directory=APPDIR/"static"),name="static");tpl=Jinja2Templates(directory=APPDIR/"templates")
@@ -68,7 +69,8 @@ def import_saved_file(p,original_name,auto_analyze=True):
    p.unlink(missing_ok=True);return {'filename':original_name,'status':'duplicate','rows_inserted':0}
   if p.suffix.lower()!='.pdf':
    p.unlink(missing_ok=True);return {'filename':original_name,'status':'failed','message':'This release accepts PDF imports only.'}
-  parsed=parse_pdf(p);e=parsed['event']
+  parsed=parse_pdf(p);e=parsed['event'];detected=detect_series(original_name);e['series']=detected or e.get('series')
+  if e.get('series') not in SERIES: raise ValueError('Could not detect series from filename. Include NCS, NCTS, or NOAPS in the filename.')
   c.execute("insert or ignore into events(series,race_date,track,data_rate,notes,source_file) values(?,?,?,?,?,?)",(e['series'],e['race_date'],e['track'],e['data_rate'],e['notes'],original_name))
   event=c.execute("select id from events where series is ? and race_date is ? and track is ?",(e['series'],e['race_date'],e['track'])).fetchone()
   if not event:raise ValueError('Could not resolve imported event')
@@ -143,24 +145,55 @@ async def camera(oid:int,slot:int,request:Request,user=Depends(auth)):
  return {'saved':True}
 
 @APP.get('/analytics',response_class=HTMLResponse)
-def analytics(request:Request,threshold:float=95,user=Depends(auth)):
- with db() as c:return tpl.TemplateResponse('analytics.html',{'request':request,'ov':overview(c,threshold),'corr':correlations(c),'trend':trend(c),'vectors':rank(c,'vector')[:20],'cars':rank(c,'car_number')[:20],'av':adjusted(c,'vector')[:20],'ac':adjusted(c,'car_number')[:20]})
+def analytics(request:Request,threshold:float=95,series:str='NCS',user=Depends(auth)):
+ if series not in SERIES:series='NCS'
+ with db() as c:
+  return tpl.TemplateResponse('analytics.html',{'request':request,'series':series,'series_options':SERIES,
+   'ov':series_overview(c,series,threshold),'corr':correlations(c),'trend':[x for x in trend(c) if x['series']==series],
+   'vectors':rank(c,'vector')[:20],'cars':rank(c,'car_number')[:20],'cameras':rank(c,'camera_serial')[:20]})
 
 @APP.get('/equipment',response_class=HTMLResponse)
-def equipment(request:Request,group:str='vector',minimum_samples:int=3,user=Depends(auth)):
+def equipment(request:Request,group:str='vector',minimum_samples:int=3,series:str='NCS',user=Depends(auth)):
  if group not in {'series','track','car_number','vector','camera_serial','camera_position'}:group='vector'
- with db() as c:return tpl.TemplateResponse('equipment.html',{'request':request,'rows':rank(c,group,minimum_samples),'group':group,'minimum_samples':minimum_samples})
+ if series not in SERIES:series='NCS'
+ with db() as c:
+  rows=rank(c,group,minimum_samples)
+  if group!='series':
+   # rank() is retained for compatibility; v3's detailed series-specific analysis is on /offenders.
+   pass
+ return tpl.TemplateResponse('equipment.html',{'request':request,'rows':rows,'group':group,'minimum_samples':minimum_samples,'series':series,'series_options':SERIES})
+
+@APP.get('/offenders',response_class=HTMLResponse)
+def offenders_page(request:Request,series:str='NCS',minimum_samples:int=3,threshold:float=95,user=Depends(auth)):
+ if series not in SERIES:series='NCS'
+ with db() as c:rows=recurring_offenders(c,series,threshold,minimum_samples,250)
+ return tpl.TemplateResponse('offenders.html',{'request':request,'rows':rows,'series':series,'series_options':SERIES,'minimum_samples':minimum_samples,'threshold':threshold})
+
+@APP.get('/offenders/detail',response_class=HTMLResponse)
+def offender_detail_page(request:Request,series:str,type:str,key:str,user=Depends(auth)):
+ if series not in SERIES:raise HTTPException(400,'Invalid series')
+ with db() as c:result=offender_detail(c,series,type,key)
+ if not result:raise HTTPException(404,'Offender not found')
+ return tpl.TemplateResponse('offender_detail.html',{'request':request,'result':result,'series':series})
 
 @APP.get('/root-cause',response_class=HTMLResponse)
-def rc(request:Request,event_id:int|None=None,observation_id:int|None=None,user=Depends(auth)):
+def rc(request:Request,series:str='NCS',event_id:int|None=None,observation_id:int|None=None,user=Depends(auth)):
+ if series not in SERIES:series='NCS'
  with db() as c:
-  ev=[dict(x) for x in c.execute('select * from events order by race_date desc')];obs=[dict(x) for x in c.execute('select id,car_number,vector,rt2_tracking from observations where event_id=? order by cast(car_number as integer)',(event_id,))] if event_id else []
-  return tpl.TemplateResponse('root_cause.html',{'request':request,'events':ev,'observations':obs,'selected_event':event_id,'selected_observation':observation_id,'result':rootcause(c,observation_id) if observation_id else None})
+  ev=[dict(x) for x in c.execute('select * from events where series=? order by race_date desc',(series,))]
+  obs=[dict(x) for x in c.execute('select id,car_number,vector,rt2_tracking from observations where event_id=? order by cast(car_number as integer)',(event_id,))] if event_id else []
+  result=observation_series_evidence(c,observation_id) if observation_id else None
+ return tpl.TemplateResponse('root_cause.html',{'request':request,'series':series,'series_options':SERIES,'events':ev,'observations':obs,'selected_event':event_id,'selected_observation':observation_id,'result':result})
+
+@APP.get('/api/offenders/{series}')
+def offenders_api(series:str,minimum_samples:int=3,threshold:float=95,user=Depends(auth)):
+ if series not in SERIES:raise HTTPException(400,'Invalid series')
+ with db() as c:return recurring_offenders(c,series,threshold,minimum_samples,500)
 
 @APP.get('/api/root-cause/{oid}')
 def rc_api(oid:int,user=Depends(auth)):
  with db() as c:
-  result=rootcause(c,oid)
+  result=observation_series_evidence(c,oid)
   if not result:raise HTTPException(404,'Observation not found')
   return result
 
