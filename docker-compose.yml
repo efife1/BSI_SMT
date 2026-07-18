@@ -1,0 +1,17 @@
+name: bsi-smt-v2
+services:
+  app:
+    build: .
+    container_name: bsi-smt-v2
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      APP_NAME: "BSI SMT"
+      APP_VERSION: "2.2.2"
+      APP_USERNAME: "${APP_USERNAME:-admin}"
+      APP_PASSWORD: "${APP_PASSWORD:?Set APP_PASSWORD in .env}"
+      HOSTNAME_NAME: "${HOSTNAME_NAME:-BSISMTDASH}"
+    volumes:
+      - ./data:/app/data
+volumes: {}
