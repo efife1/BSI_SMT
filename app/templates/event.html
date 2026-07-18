@@ -1,1 +1,196 @@
-<!doctype html><html><head><style>body{margin:0;background:#08101c;color:#eef4fb;font-family:system-ui}header{padding:18px 24px;background:#111d2b;border-bottom:1px solid #2b3b50;display:flex;align-items:center;gap:15px}header img{width:56px;border-radius:12px}main{padding:24px;max-width:1200px;margin:auto}.card{background:#111d2b;border:1px solid #2b3b50;border-radius:14px;padding:18px;margin-bottom:18px}a,button{color:white;background:#e63323;border:0;border-radius:8px;padding:9px 14px;text-decoration:none;font-weight:700}input,select,textarea{background:#0b1624;color:white;border:1px solid #40536b;border-radius:6px;padding:7px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #304157;padding:6px}th{background:#17263a}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{font-size:2rem;font-weight:800}@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}}</style></head><body><header><h1>{{event.series}} · {{event.track}} · {{event.race_date}}</h1><a href="/events">Events</a></header><main><div class=card style="overflow:auto"><table><tr><th>Car</th><th>Team</th><th>Vector</th><th>RT2</th><th>Notes</th><th colspan=8>Four Camera Assignments</th><th>Save</th></tr>{% for r in rows %}<tr data-id="{{r.id}}"><td><input value="{{r.car_number or ''}}"></td><td><input value="{{r.team or ''}}"></td><td><input value="{{r.vector or ''}}"></td><td><input value="{{r.rt2_tracking or ''}}"></td><td><input value="{{r.notes or ''}}"></td>{% for n in range(1,5) %}{% set a=(r.assignments|selectattr('slot_number','equalto',n)|list|first) %}<td><input placeholder="Serial {{n}}" value="{{a.camera_serial if a else ''}}"></td><td><input placeholder="Position {{n}}" value="{{a.camera_position if a else ''}}"></td>{% endfor %}<td><button onclick=save(this)>Save</button></td></tr>{% endfor %}</table></div></main><script>async function save(b){let tr=b.closest('tr'),e=[...tr.querySelectorAll('input')],id=tr.dataset.id;await fetch('/api/observations/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({car_number:e[0].value,team:e[1].value,vector:e[2].value,rt2_tracking:e[3].value,notes:e[4].value})});let k=5;for(let s=1;s<=4;s++)await fetch('/api/observations/'+id+'/camera/'+s,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({camera_serial:e[k++].value,camera_position:e[k++].value})});b.textContent='Saved';setTimeout(()=>b.textContent='Save',1000)}</script></body></html>
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{event.series}} · {{event.track}} Camera Assignments</title>
+<style>
+body{margin:0;background:#08101c;color:#eef4fb;font-family:system-ui}
+header{padding:18px 24px;background:#111d2b;border-bottom:1px solid #2b3b50;display:flex;align-items:center;gap:15px;flex-wrap:wrap}
+main{padding:24px;max-width:1700px;margin:auto}
+.card{background:#111d2b;border:1px solid #2b3b50;border-radius:14px;padding:18px;margin-bottom:18px}
+a,button{color:white;background:#e63323;border:0;border-radius:8px;padding:9px 14px;text-decoration:none;font-weight:700}
+button.secondary{background:#40536b}
+input,select,textarea{background:#0b1624;color:white;border:1px solid #40536b;border-radius:6px;padding:7px;min-width:80px}
+input.serial{width:110px}
+select.position{width:145px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid #304157;padding:6px;vertical-align:top}
+th{background:#17263a;position:sticky;top:0;z-index:2}
+.table-wrap{overflow:auto;max-height:75vh}
+.camera-cell{display:grid;gap:6px;min-width:150px}
+.saved{background:#16834c!important}
+.error{background:#a72d24!important}
+.muted{color:#9fb0c3}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+<h1>{{event.series}} · {{event.track}} · {{event.race_date}}</h1>
+<a href="/events">All Races</a>
+<a href="/equipment?group=camera_serial&series={{event.series}}">Camera Analysis</a>
+<a href="/offenders?series={{event.series}}">Recurring Offenders</a>
+</header>
+<main>
+<div class="card">
+<div class="toolbar">
+<strong>Camera serial assignments</strong>
+<span class="muted">Each assignment is stored against this race and car observation, so the same camera can be tracked across the series.</span>
+<label>Find car or serial <input id="table-filter" placeholder="Search"></label>
+<button type="button" class="secondary" onclick="saveAll()">Save All Rows</button>
+<span id="save-progress" class="muted"></span>
+</div>
+</div>
+
+<div class="card table-wrap">
+<table id="assignment-table">
+<thead>
+<tr>
+<th>Car</th>
+<th>Team</th>
+<th>Vector</th>
+<th>RT2</th>
+<th>Notes</th>
+{% for n in range(1,5) %}
+<th>Camera {{n}}</th>
+{% endfor %}
+<th>Save</th>
+</tr>
+</thead>
+<tbody>
+{% for r in rows %}
+<tr data-id="{{r.id}}">
+<td><input data-field="car_number" value="{{r.car_number or ''}}"></td>
+<td><input data-field="team" value="{{r.team or ''}}"></td>
+<td><input data-field="vector" value="{{r.vector or ''}}"></td>
+<td><input data-field="rt2_tracking" value="{{r.rt2_tracking or ''}}"></td>
+<td><input data-field="notes" value="{{r.notes or ''}}"></td>
+{% for n in range(1,5) %}
+{% set a=(r.assignments|selectattr('slot_number','equalto',n)|list|first) %}
+<td>
+<div class="camera-cell" data-slot="{{n}}">
+<input class="serial" data-camera-field="camera_serial" list="known-camera-serials"
+       placeholder="Serial number" value="{{a.camera_serial if a else ''}}">
+<select class="position" data-camera-field="camera_position">
+{% set selected_position=a.camera_position if a else '' %}
+{% for position in ['', 'Driver', 'Roof', 'Rear Bumper', '360', 'Foot Cam', 'Over Shoulder', 'Streaming POV', 'Other'] %}
+<option value="{{position}}" {% if selected_position==position %}selected{% endif %}>{{position or 'Position'}}</option>
+{% endfor %}
+</select>
+<input data-camera-field="notes" placeholder="Camera notes" value="{{a.notes if a else ''}}">
+</div>
+</td>
+{% endfor %}
+<td><button type="button" onclick="saveRow(this)">Save</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<datalist id="known-camera-serials">
+{% set serials=[] %}
+{% for r in rows %}
+  {% for a in r.assignments %}
+    {% if a.camera_serial and a.camera_serial not in serials %}
+      {% set _=serials.append(a.camera_serial) %}
+      <option value="{{a.camera_serial}}">
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+</datalist>
+</main>
+
+<script>
+async function checkedFetch(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      message = body.detail || message;
+    } catch (_) {}
+    throw new Error(message);
+  }
+  return response;
+}
+
+async function saveRow(button) {
+  const row = button.closest('tr');
+  const observationId = row.dataset.id;
+  const observation = {};
+
+  row.querySelectorAll('[data-field]').forEach(input => {
+    observation[input.dataset.field] = input.value;
+  });
+
+  button.disabled = true;
+  button.textContent = 'Saving…';
+
+  try {
+    await checkedFetch(`/api/observations/${observationId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(observation)
+    });
+
+    for (const cameraCell of row.querySelectorAll('[data-slot]')) {
+      const payload = {};
+      cameraCell.querySelectorAll('[data-camera-field]').forEach(input => {
+        payload[input.dataset.cameraField] = input.value.trim();
+      });
+
+      await checkedFetch(
+        `/api/observations/${observationId}/camera/${cameraCell.dataset.slot}`,
+        {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        }
+      );
+    }
+
+    button.textContent = 'Saved';
+    button.classList.add('saved');
+    setTimeout(() => {
+      button.textContent = 'Save';
+      button.classList.remove('saved');
+      button.disabled = false;
+    }, 1200);
+    return true;
+  } catch (error) {
+    button.textContent = 'Error';
+    button.classList.add('error');
+    button.title = error.message;
+    setTimeout(() => {
+      button.textContent = 'Retry';
+      button.disabled = false;
+    }, 1200);
+    return false;
+  }
+}
+
+async function saveAll() {
+  const buttons = [...document.querySelectorAll('#assignment-table tbody button')];
+  const progress = document.getElementById('save-progress');
+  let saved = 0;
+
+  for (const button of buttons) {
+    progress.textContent = `Saving ${saved + 1} of ${buttons.length}…`;
+    if (await saveRow(button)) saved += 1;
+  }
+
+  progress.textContent = `${saved} of ${buttons.length} rows saved.`;
+}
+
+document.getElementById('table-filter').addEventListener('input', event => {
+  const term = event.target.value.trim().toLowerCase();
+  document.querySelectorAll('#assignment-table tbody tr').forEach(row => {
+    row.hidden = term && !row.textContent.toLowerCase().includes(term)
+      && ![...row.querySelectorAll('input,select')]
+          .some(input => input.value.toLowerCase().includes(term));
+  });
+});
+</script>
+</body>
+</html>

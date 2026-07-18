@@ -1,1 +1,154 @@
-<html><head><style>body{margin:0;background:#08101c;color:#eef4fb;font-family:system-ui}header{padding:18px;background:#111d2b;display:flex;gap:12px;align-items:center;flex-wrap:wrap}main{padding:22px;max-width:1400px;margin:auto}.card{background:#111d2b;border:1px solid #2b3b50;border-radius:12px;padding:16px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.stat{font-size:2rem;font-weight:800}.muted{color:#9fb0c3}a,button{color:white;background:#e63323;border:0;border-radius:7px;padding:8px 12px;text-decoration:none;font-weight:700}input,select{background:#0b1624;color:white;border:1px solid #40536b;padding:7px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #304157;padding:6px}th{background:#17263a}.bad{color:#ff6b5f}.warn{color:#ffbd3d}@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}}</style><title>Equipment</title></head><body><header><h1>Equipment Analysis</h1><a href="/">Dashboard</a><a href="/analytics">RT2 Analytics</a><a href="/root-cause">Root Cause</a></header><main><form class=card>Group <select name=group>{% for g in ['vector','car_number','camera_serial','camera_position','track','series'] %}<option value="{{g}}" {% if group==g %}selected{% endif %}>{{g}}</option>{% endfor %}</select> Minimum samples <input name=minimum_samples value="{{minimum_samples}}"><button>Analyze</button></form><div class=card><table><tr><th>Item</th><th>N</th><th>Average RT2</th><th>Worst</th><th>Failure %</th></tr>{% for x in rows %}<tr><td>{{x.label}}</td><td>{{x.samples}}</td><td>{{x.avg_rt2}}</td><td>{{x.worst_rt2}}</td><td>{{x.failure_rate}}</td></tr>{% endfor %}</table></div></main></body></html>
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Equipment Analysis</title>
+<style>
+body{margin:0;background:#08101c;color:#eef4fb;font-family:system-ui}
+header{padding:18px;background:#111d2b;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+main{padding:22px;max-width:1400px;margin:auto}
+.card{background:#111d2b;border:1px solid #2b3b50;border-radius:12px;padding:16px;margin-bottom:16px}
+.muted{color:#9fb0c3}
+a,button{color:white;background:#e63323;border:0;border-radius:7px;padding:8px 12px;text-decoration:none;font-weight:700}
+input,select{background:#0b1624;color:white;border:1px solid #40536b;padding:7px}
+.table-wrap{overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid #304157;padding:8px}
+th{background:#17263a;position:sticky;top:0;white-space:nowrap}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{background:#20344f}
+.sort-indicator{display:inline-block;min-width:1.2em;margin-left:5px;color:#ffbd3d}
+.bad{color:#ff6b5f}.warn{color:#ffbd3d}
+</style>
+</head>
+<body>
+<header>
+<h1>Equipment Analysis</h1>
+<a href="/">Dashboard</a>
+<a href="/analytics">RT2 Analytics</a>
+<a href="/root-cause">Root Cause</a>
+<a href="/events">Race Camera Assignments</a>
+</header>
+<main>
+<form class="card">
+<label>Series
+<select name="series">
+{% for s in series_options %}
+<option value="{{s}}" {% if series==s %}selected{% endif %}>{{s}}</option>
+{% endfor %}
+</select>
+</label>
+<label>Group
+<select name="group">
+{% for g in ['vector','car_number','camera_serial','camera_position','track','series'] %}
+<option value="{{g}}" {% if group==g %}selected{% endif %}>{{g}}</option>
+{% endfor %}
+</select>
+</label>
+<label>Minimum samples
+<input name="minimum_samples" type="number" min="1" value="{{minimum_samples}}">
+</label>
+<button>Analyze</button>
+</form>
+
+<div class="card">
+<p class="muted">Click a column heading to sort ascending or descending. A third click restores the original analysis order.</p>
+<div class="table-wrap">
+<table id="equipment-table">
+<thead>
+<tr>
+<th class="sortable" data-type="text">Item<span class="sort-indicator"></span></th>
+<th class="sortable" data-type="number">N<span class="sort-indicator"></span></th>
+<th class="sortable" data-type="number">Average RT2<span class="sort-indicator"></span></th>
+<th class="sortable" data-type="number">Worst<span class="sort-indicator"></span></th>
+<th class="sortable" data-type="number">Failure %<span class="sort-indicator"></span></th>
+</tr>
+</thead>
+<tbody>
+{% for x in rows %}
+<tr data-original-index="{{loop.index0}}">
+<td>{{x.label}}</td>
+<td>{{x.samples}}</td>
+<td>{{x.avg_rt2}}</td>
+<td>{{x.worst_rt2}}</td>
+<td>{{x.failure_rate}}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+</main>
+
+<script>
+(() => {
+  const table = document.getElementById('equipment-table');
+  const tbody = table.tBodies[0];
+  let activeColumn = -1;
+  let direction = 0; // 0 original, 1 ascending, -1 descending
+
+  function parseValue(cell, type) {
+    const raw = cell.textContent.trim();
+    if (type === 'number') {
+      const cleaned = raw.replace(/[%,$]/g, '');
+      const value = Number.parseFloat(cleaned);
+      return Number.isNaN(value) ? Number.NEGATIVE_INFINITY : value;
+    }
+    return raw.toLocaleLowerCase(undefined, {numeric: true});
+  }
+
+  function resetIndicators() {
+    table.querySelectorAll('.sort-indicator').forEach(el => el.textContent = '');
+    table.querySelectorAll('th.sortable').forEach(th => th.removeAttribute('aria-sort'));
+  }
+
+  table.querySelectorAll('th.sortable').forEach((th, column) => {
+    th.tabIndex = 0;
+    th.setAttribute('role', 'button');
+
+    const sort = () => {
+      if (activeColumn !== column) {
+        activeColumn = column;
+        direction = 1;
+      } else if (direction === 1) {
+        direction = -1;
+      } else if (direction === -1) {
+        direction = 0;
+      } else {
+        direction = 1;
+      }
+
+      const rows = [...tbody.rows];
+      resetIndicators();
+
+      if (direction === 0) {
+        rows.sort((a, b) =>
+          Number(a.dataset.originalIndex) - Number(b.dataset.originalIndex)
+        );
+      } else {
+        const type = th.dataset.type || 'text';
+        rows.sort((a, b) => {
+          const av = parseValue(a.cells[column], type);
+          const bv = parseValue(b.cells[column], type);
+          if (typeof av === 'number') return (av - bv) * direction;
+          return av.localeCompare(bv, undefined, {numeric: true}) * direction;
+        });
+        th.querySelector('.sort-indicator').textContent = direction === 1 ? '▲' : '▼';
+        th.setAttribute('aria-sort', direction === 1 ? 'ascending' : 'descending');
+      }
+
+      rows.forEach(row => tbody.appendChild(row));
+    };
+
+    th.addEventListener('click', sort);
+    th.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        sort();
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
