@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.1.0
+
+- Added Excel XLSX/XLSM enrichment import.
+- Added safe matching by series, date, track, car, and vector.
+- Added camera serial and position import into race assignments.
+- Added reconciliation summaries and conflict preservation.
+- Added sortable Equipment Analysis columns.
+- Improved the per-race four-camera assignment editor.
+- Added `push_to_github.sh` for the Mac GitHub workflow.
+- Replaced the README with complete installation and operating documentation.
+
 ## 3.0.0
 
 - Added filename-based NCS, NCTS, and NOAPS classification.

@@ -6,11 +6,12 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from app.services.pdf_parser import parse_pdf
 from app.services.excel_parser import parse_excel
+from app.services.excel_enrichment import enrich_database_from_excel
 from app.services.analytics import overview,correlations,trend,rank,adjusted,rootcause,save_analysis_snapshot
 from database.migrate import migrate
 from app.services.series_analytics import SERIES,detect_series,series_overview,recurring_offenders,offender_detail,observation_series_evidence
 
-APP=FastAPI(title="BSI SMT",version="3.0.0")
+APP=FastAPI(title="BSI SMT",version="3.1.0")
 APPDIR=Path(__file__).parent;DATA=Path("data");DB=DATA/"bsi_smt_v2.db";UP=DATA/"uploads";AR=DATA/"archive"
 UP.mkdir(parents=True,exist_ok=True);AR.mkdir(parents=True,exist_ok=True)
 APP.mount("/static",StaticFiles(directory=APPDIR/"static"),name="static");tpl=Jinja2Templates(directory=APPDIR/"templates")
@@ -67,8 +68,15 @@ def import_saved_file(p,original_name,auto_analyze=True):
  with db() as c:
   if c.execute("select 1 from imports where file_hash=?",(fh,)).fetchone():
    p.unlink(missing_ok=True);return {'filename':original_name,'status':'duplicate','rows_inserted':0}
-  if p.suffix.lower()!='.pdf':
-   p.unlink(missing_ok=True);return {'filename':original_name,'status':'failed','message':'This release accepts PDF imports only.'}
+  suffix=p.suffix.lower()
+  if suffix in {'.xlsx','.xlsm'}:
+   result=enrich_database_from_excel(c,p,original_name,user='spreadsheet-import')
+   c.execute("insert into imports(source_file,file_hash,status,rows_read,rows_inserted,rows_skipped,message) values(?,?,?,?,?,?,?)",(original_name,fh,'complete',result['rows_read'],result['events_created']+result['observations_created']+result['event_fields_updated']+result['observation_fields_updated']+result['camera_assignments_added']+result['camera_assignments_updated'],result['rows_unmatched']+result['rows_ambiguous'],json.dumps(result)))
+   c.commit()
+   archive=AR/f"{datetime.datetime.now():%Y%m%d-%H%M%S}-{p.name}";shutil.move(p,archive)
+   return {'filename':original_name,'status':'complete','import_type':'excel-enrichment','rows_inserted':result['events_created']+result['observations_created']+result['event_fields_updated']+result['observation_fields_updated']+result['camera_assignments_added']+result['camera_assignments_updated'],'message':result['summary'],'reconciliation':result}
+  if suffix!='.pdf':
+   p.unlink(missing_ok=True);return {'filename':original_name,'status':'failed','message':'Supported files are PDF, XLSX, and XLSM.'}
   parsed=parse_pdf(p);e=parsed['event'];detected=detect_series(original_name);e['series']=detected or e.get('series')
   if e.get('series') not in SERIES: raise ValueError('Could not detect series from filename. Include NCS, NCTS, or NOAPS in the filename.')
   c.execute("insert or ignore into events(series,race_date,track,data_rate,notes,source_file) values(?,?,?,?,?,?)",(e['series'],e['race_date'],e['track'],e['data_rate'],e['notes'],original_name))
