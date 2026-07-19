@@ -90,6 +90,19 @@ def recurring_offenders(c, series: str, threshold: float=95, minimum_samples: in
     results.sort(key=lambda x:(-x['evidence_score'],x['avg_rt2']))
     return results[:limit]
 
+
+def dashboard_top_offenders(c, series: str, threshold: float=95, minimum_samples: int=3, limit: int=5):
+    """Return dashboard rankings for the three requested single-factor dimensions.
+
+    Ranking uses the transparent recurring-offender evidence score, then average
+    RT2 as the tie breaker. This avoids promoting one-off low observations above
+    factors that underperform repeatedly across multiple races.
+    """
+    ranked=recurring_offenders(c,series,threshold,minimum_samples,10000)
+    mapping=(("cameras","Camera"),("vectors","Vector"),("cars","Car"))
+    return {name:[item for item in ranked if item["type"]==type_name][:limit]
+            for name,type_name in mapping}
+
 def offender_detail(c,series,type_name,key):
     item=next((x for x in recurring_offenders(c,series,minimum_samples=1,limit=10000) if x['type']==type_name and x['key']==key),None)
     if not item:return None

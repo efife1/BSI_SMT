@@ -9,9 +9,9 @@ from app.services.excel_parser import parse_excel
 from app.services.excel_enrichment import enrich_database_from_excel
 from app.services.analytics import overview,correlations,trend,rank,adjusted,rootcause,save_analysis_snapshot
 from database.migrate import migrate
-from app.services.series_analytics import SERIES,detect_series,series_overview,recurring_offenders,offender_detail,observation_series_evidence
+from app.services.series_analytics import SERIES,detect_series,series_overview,recurring_offenders,dashboard_top_offenders,offender_detail,observation_series_evidence
 
-APP=FastAPI(title="BSI SMT",version="3.1.0")
+APP=FastAPI(title="BSI SMT",version="3.1.1")
 APPDIR=Path(__file__).parent;DATA=Path("data");DB=DATA/"bsi_smt_v2.db";UP=DATA/"uploads";AR=DATA/"archive"
 UP.mkdir(parents=True,exist_ok=True);AR.mkdir(parents=True,exist_ok=True)
 APP.mount("/static",StaticFiles(directory=APPDIR/"static"),name="static");tpl=Jinja2Templates(directory=APPDIR/"templates")
@@ -49,9 +49,14 @@ def login(username:str=Form(...),password:str=Form(...)):
  r=RedirectResponse("/",303);r.set_cookie("bsi_user",username,httponly=True,samesite="lax");r.set_cookie("bsi_token",hashlib.sha256((username+password).encode()).hexdigest(),httponly=True,samesite="lax");return r
 
 @APP.get("/",response_class=HTMLResponse)
-def home(request:Request,user=Depends(auth)):
- with db() as c:s=dict(c.execute("select * from v_dashboard").fetchone())
- return tpl.TemplateResponse("dashboard.html",{"request":request,"s":s})
+def home(request:Request,series:str="NCS",threshold:float=95,minimum_samples:int=3,user=Depends(auth)):
+ if series not in SERIES:series="NCS"
+ minimum_samples=max(1,min(minimum_samples,100))
+ with db() as c:
+  s=dict(c.execute("select * from v_dashboard").fetchone())
+  health=dashboard_top_offenders(c,series,threshold,minimum_samples,5)
+  series_stats=series_overview(c,series,threshold)
+ return tpl.TemplateResponse("dashboard.html",{"request":request,"s":s,"series":series,"series_options":SERIES,"threshold":threshold,"minimum_samples":minimum_samples,"health":health,"series_stats":series_stats})
 
 @APP.get("/import",response_class=HTMLResponse)
 def imp_page(request:Request,user=Depends(auth)):return tpl.TemplateResponse("import.html",{"request":request})

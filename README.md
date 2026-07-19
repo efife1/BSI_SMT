@@ -241,3 +241,9 @@ bsi-update
 ## License
 
 See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+
+## Dashboard recurring-factor rankings
+
+The main dashboard displays the top five camera serials, vectors, and car numbers associated with lower RT2 for the selected series. The controls allow the engineer to select the series, the low-RT2 threshold, and the minimum number of valid samples.
+
+The ranking is not based on the lowest average alone. It uses the existing recurring-offender evidence score, combining underperformance, failure rate, repeatability across races, and event-adjusted performance. Each result links to its complete Evidence Explorer history. These are statistical associations intended to guide investigation, not declarations of physical causation.

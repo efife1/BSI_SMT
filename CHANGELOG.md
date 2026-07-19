@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.1
+
+- Added top-five camera serial, vector, and car-number panels to the main dashboard.
+- Added series, low-RT2 threshold, and minimum-sample dashboard controls.
+- Rankings use the existing transparent recurring-offender evidence score.
+- Added direct links from each dashboard factor to its Evidence Explorer history.
+- Added dashboard-ranking tests and a GitHub publishing script.
+
 ## 3.1.0
 
 - Added Excel XLSX/XLSM enrichment import.

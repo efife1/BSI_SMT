@@ -1,1 +1,72 @@
-<!doctype html><html><head><style>body{margin:0;background:#08101c;color:#eef4fb;font-family:system-ui}header{padding:18px 24px;background:#111d2b;border-bottom:1px solid #2b3b50;display:flex;align-items:center;gap:15px}header img{width:56px;border-radius:12px}main{padding:24px;max-width:1200px;margin:auto}.card{background:#111d2b;border:1px solid #2b3b50;border-radius:14px;padding:18px;margin-bottom:18px}a,button{color:white;background:#e63323;border:0;border-radius:8px;padding:9px 14px;text-decoration:none;font-weight:700}input,select,textarea{background:#0b1624;color:white;border:1px solid #40536b;border-radius:6px;padding:7px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #304157;padding:6px}th{background:#17263a}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{font-size:2rem;font-weight:800}@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}}</style></head><body><header><img src="/static/bsi-smt-dashboard-icon-256.png"><h1>BSI SMT</h1><a href="/import">Import</a><a href="/events">Events</a><a href="/analytics">RT2 Analytics</a><a href="/equipment">Equipment</a><a href="/root-cause">Root Cause</a><a href="/offenders">Recurring Offenders</a></header><main><div class=grid><div class=card><div>Observations</div><div class=stat>{{s.observations}}</div></div><div class=card><div>Events</div><div class=stat>{{s.events}}</div></div><div class=card><div>Average RT2</div><div class=stat>{{s.avg_rt2 or 0}}%</div></div><div class=card><div>Failures &lt;95%</div><div class=stat>{{s.failures_below_95}}</div></div></div></main></body></html>
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>BSI SMT Dashboard</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#08101c;color:#eef4fb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:18px 24px;background:#111d2b;border-bottom:1px solid #2b3b50;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header img{width:56px;border-radius:12px}header h1{margin:0 8px 0 0}
+main{padding:24px;max-width:1500px;margin:auto}
+.card{background:#111d2b;border:1px solid #2b3b50;border-radius:14px;padding:18px}
+a,button{color:white;background:#e63323;border:0;border-radius:8px;padding:9px 14px;text-decoration:none;font-weight:700}
+input,select{background:#0b1624;color:white;border:1px solid #40536b;border-radius:6px;padding:8px}
+.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.health-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.stat{font-size:2rem;font-weight:800}.muted{color:#9fb0c3}.small{font-size:.82rem}
+.filters{display:flex;gap:14px;align-items:end;flex-wrap:wrap;margin-bottom:18px}.filters label{display:grid;gap:5px}
+.section-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.section-title h2,.section-title h3{margin:0}
+.rank-list{display:grid;gap:9px}.rank-row{display:grid;grid-template-columns:2.2rem minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px;border:1px solid #304157;border-radius:10px;background:#0b1624;text-decoration:none;color:inherit}
+.rank-row:hover{border-color:#e63323;background:#101e30}.rank-number{font-size:1.3rem;font-weight:900;color:#ffbd3d}.rank-label{font-weight:800;overflow-wrap:anywhere}.rank-metrics{text-align:right;white-space:nowrap}.score{font-weight:900}.negative{color:#ff8176}.positive{color:#76d7a4}.empty{padding:18px;border:1px dashed #40536b;border-radius:10px;color:#9fb0c3}
+.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:.72rem;font-weight:800;text-transform:uppercase;background:#35465c}.badge.strong{background:#8f2c25}.badge.possible{background:#7a5c13}.badge.watch{background:#315777}
+.explanation{margin:0 0 18px;line-height:1.5}
+@media(max-width:1050px){.health-grid{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){main{padding:14px}.summary-grid{grid-template-columns:1fr}.rank-row{grid-template-columns:2rem 1fr}.rank-metrics{grid-column:2;text-align:left}}
+</style>
+</head>
+<body>
+<header>
+<img src="/static/bsi-smt-dashboard-icon-256.png" alt="BSI SMT">
+<h1>BSI SMT</h1>
+<a href="/import">Import</a><a href="/events">Events</a><a href="/analytics?series={{series}}">RT2 Analytics</a><a href="/equipment?series={{series}}">Equipment</a><a href="/root-cause?series={{series}}">Root Cause</a><a href="/offenders?series={{series}}&threshold={{threshold}}&minimum_samples={{minimum_samples}}">Recurring Offenders</a>
+</header>
+<main>
+<div class="summary-grid">
+<div class="card"><div>All Observations</div><div class="stat">{{s.observations}}</div></div>
+<div class="card"><div>All Events</div><div class="stat">{{s.events}}</div></div>
+<div class="card"><div>{{series}} Average RT2</div><div class="stat">{{series_stats.mean or 0}}%</div><div class="muted small">{{series_stats.count}} valid observations</div></div>
+<div class="card"><div>{{series}} Below {{threshold}}%</div><div class="stat">{{series_stats.failures}}</div><div class="muted small">{{series_stats.failure_rate or 0}}% failure rate</div></div>
+</div>
+
+<form class="card filters" method="get" action="/">
+<label>Series<select name="series">{% for option in series_options %}<option value="{{option}}" {% if option==series %}selected{% endif %}>{{option}}</option>{% endfor %}</select></label>
+<label>Low RT2 threshold<input name="threshold" type="number" step="0.1" min="0" max="100" value="{{threshold}}"></label>
+<label>Minimum samples<input name="minimum_samples" type="number" min="1" max="100" value="{{minimum_samples}}"></label>
+<button type="submit">Update Dashboard</button>
+</form>
+
+<div class="card" style="margin-bottom:18px">
+<div class="section-title"><h2>Top recurring factors associated with lower RT2</h2><a href="/offenders?series={{series}}&threshold={{threshold}}&minimum_samples={{minimum_samples}}">Full analysis</a></div>
+<p class="muted explanation">Rankings use repeated underperformance, failure rate, number of races, and event-adjusted RT2. They identify factors associated with lower RT2; they do not prove that a camera, vector, or car physically caused the result.</p>
+<div class="health-grid">
+{% for title,items,type_name in [('Camera Serials',health.cameras,'Camera'),('Vectors',health.vectors,'Vector'),('Car Numbers',health.cars,'Car')] %}
+<section>
+<div class="section-title"><h3>Top 5 {{title}}</h3></div>
+<div class="rank-list">
+{% for item in items %}
+<a class="rank-row" href="/offenders/detail?series={{series}}&type={{type_name|urlencode}}&key={{item.key|urlencode}}">
+<div class="rank-number">{{loop.index}}</div>
+<div><div class="rank-label">{% if type_name=='Camera' %}Camera {% elif type_name=='Vector' %}Vector {% else %}Car {% endif %}{{item.key}}</div><div class="muted small">{{item.samples}} samples · {{item.events}} races · {{item.failure_rate}}% below threshold</div></div>
+<div class="rank-metrics"><div class="score">Evidence {{item.evidence_score}}</div><div class="small {% if item.series_delta is not none and item.series_delta < 0 %}negative{% else %}positive{% endif %}">{{'%+.2f'|format(item.series_delta or 0)}} vs series</div><span class="badge {{item.classification}}">{{item.classification}}</span></div>
+</a>
+{% else %}<div class="empty">No factor has at least {{minimum_samples}} valid samples for this series.</div>{% endfor %}
+</div>
+</section>
+{% endfor %}
+</div>
+</div>
+</main>
+</body>
+</html>
